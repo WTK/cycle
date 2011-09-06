@@ -7,7 +7,7 @@
  * http://jquery.malsup.com/license.html
  * Requires: jQuery v1.3.2 or later
  */
-;(function($) {
+(function($) {
 
 var ver = '2.9995';
 
@@ -20,7 +20,7 @@ if ($.support == undefined) {
 
 function debug(s) {
 	$.fn.cycle.debug && log(s);
-}		
+}
 function log() {
 	window.console && console.log && console.log('[cycle] ' + Array.prototype.join.call(arguments,' '));
 }
@@ -63,7 +63,7 @@ $.fn.cycle = function(options, arg2) {
 			return;
 
 		opts.updateActivePagerLink = opts.updateActivePagerLink || $.fn.cycle.updateActivePagerLink;
-		
+
 		// stop existing slideshow for this container (if there is one)
 		if (this.cycleTimeout)
 			clearTimeout(this.cycleTimeout);
@@ -96,6 +96,7 @@ $.fn.cycle = function(options, arg2) {
 };
 
 function triggerPause(cont, byHover, onPager) {
+    console.log('trigger pause');
 	var opts = $(cont).data('cycle.opts');
 	var paused = !!cont.cyclePause;
 	if (paused && opts.paused)
@@ -177,7 +178,7 @@ function handleArguments(cont, options, arg2) {
 		return false;
 	}
 	return options;
-	
+
 	function checkInstantResume(isPaused, arg2, cont) {
 		if (!isPaused && arg2 === true) { // resume now!
 			var options = $(cont).data('cycle.opts');
@@ -207,7 +208,7 @@ function destroy(opts) {
 		$(opts.next).unbind(opts.prevNextEvent);
 	if (opts.prev)
 		$(opts.prev).unbind(opts.prevNextEvent);
-	
+
 	if (opts.pager || opts.pagerAnchorBuilder)
 		$.each(opts.pagerAnchors || [], function() {
 			this.unbind().remove();
@@ -335,7 +336,7 @@ function buildOptions($cont, $slides, els, options, o) {
 	    	});
 	  	});
 	}
-		
+
 	// stretch container
 	var reshape = opts.containerResize && !$cont.innerHeight();
 	if (reshape) { // do this only if container has no size http://tinyurl.com/da2oa9
@@ -421,7 +422,7 @@ function buildOptions($cont, $slides, els, options, o) {
 			opts.speed = $.fx.speeds[opts.speed] || parseInt(opts.speed,10);
 		if (!opts.sync)
 			opts.speed = opts.speed / 2;
-		
+
 		var buffer = opts.fx == 'none' ? 0 : opts.fx == 'shuffle' ? 500 : 250;
 		while((opts.timeout - opts.speed) < buffer) // sanitize timeout
 			opts.timeout += opts.speed;
@@ -589,6 +590,17 @@ $.fn.cycle.resetState = function(opts, fx) {
 		init(opts.$cont, $(opts.elements), opts);
 };
 
+function stageNextTransition(els, opts, fwd, p) {
+    var ms = 0;
+        if (opts.timeout && !opts.continuous)
+            ms = getTimeout(els[opts.currSlide], els[opts.nextSlide], opts, fwd);
+        else if (opts.continuous && p.cyclePause) // continuous shows work off an after callback, not this timer logic
+            ms = 10;
+        if (ms > 0) {
+            p.cycleTimeout = setTimeout(function(){ go(els, opts, 0, !opts.backwards) }, ms);
+        }
+}
+
 // this is the main engine fn, it handles the timeouts, callbacks and slide index mgmt
 function go(els, opts, manual, fwd) {
 	// opts.busy is true if we're in the middle of an animation
@@ -598,6 +610,7 @@ function go(els, opts, manual, fwd) {
 		$(els).stop(true,true);
 		opts.busy = 0;
 	}
+
 	// don't begin another timeout-based transition if there is one active
 	if (opts.busy) {
 		debug('transition active, ignoring new tx request');
@@ -607,8 +620,9 @@ function go(els, opts, manual, fwd) {
 	var p = opts.$cont[0], curr = els[opts.currSlide], next = els[opts.nextSlide];
 
 	// stop cycling if we have an outstanding stop request
-	if (p.cycleStop != opts.stopCount || p.cycleTimeout === 0 && !manual)
+	if (p.cycleStop != opts.stopCount || p.cycleTimeout === 0 && !manual) {
 		return;
+    }
 
 	// check to see if we should stop cycling based on autostop options
 	if (!manual && !p.cyclePause && !opts.bounce &&
@@ -620,7 +634,8 @@ function go(els, opts, manual, fwd) {
 	}
 
 	// if slideshow is paused, only transition on a manual trigger
-	var changed = false;
+	var changed = false,
+        bindBeforehand = false;
 	if ((manual || !p.cyclePause) && (opts.nextSlide != opts.currSlide)) {
 		changed = true;
 		var fx = opts.fx;
@@ -658,22 +673,30 @@ function go(els, opts, manual, fwd) {
 		var after = function() {
 			opts.busy = 0;
 			$.each(opts.after, function(i,o) {
-				if (p.cycleStop != opts.stopCount) return;
+				if (p.cycleStop != opts.stopCount) {
+                    return;
+                }
 				o.apply(next, [curr, next, opts, fwd]);
 			});
+
+            // stage the next transition
+            stageNextTransition(els, opts, fwd, p);
 		};
 
 		debug('tx firing('+fx+'); currSlide: ' + opts.currSlide + '; nextSlide: ' + opts.nextSlide);
-		
+
 		// get ready to perform the transition
 		opts.busy = 1;
-		if (opts.fxFn) // fx function provided?
+		if (opts.fxFn) { // fx function provided?
 			opts.fxFn(curr, next, opts, after, fwd, manual && opts.fastOnEvent);
-		else if ($.isFunction($.fn.cycle[opts.fx])) // fx plugin ?
+		} else if ($.isFunction($.fn.cycle[opts.fx])) {// fx plugin ?
 			$.fn.cycle[opts.fx](curr, next, opts, after, fwd, manual && opts.fastOnEvent);
-		else
+        } else {
 			$.fn.cycle.custom(curr, next, opts, after, fwd, manual && opts.fastOnEvent);
-	}
+        }
+	} else {
+        bindBeforehand = true;
+    }
 
 	if (changed || opts.nextSlide == opts.currSlide) {
 		// calculate the next slide
@@ -713,16 +736,12 @@ function go(els, opts, manual, fwd) {
 	}
 	if (changed && opts.pager)
 		opts.updateActivePagerLink(opts.pager, opts.currSlide, opts.activePagerClass);
-	
-	// stage the next transition
-	var ms = 0;
-	if (opts.timeout && !opts.continuous)
-		ms = getTimeout(els[opts.currSlide], els[opts.nextSlide], opts, fwd);
-	else if (opts.continuous && p.cyclePause) // continuous shows work off an after callback, not this timer logic
-		ms = 10;
-	if (ms > 0)
-		p.cycleTimeout = setTimeout(function(){ go(els, opts, 0, !opts.backwards) }, ms);
-};
+
+    if (bindBeforehand) {
+        // stage the next transition
+        stageNextTransition(els, opts, fwd, p);
+    }
+}
 
 // invoked after transition
 $.fn.cycle.updateActivePagerLink = function(pager, currSlide, clsName) {
@@ -805,7 +824,7 @@ $.fn.cycle.createPagerAnchor = function(i, el, $p, els, opts) {
 	}
 	else
 		a = '<a href="#">'+(i+1)+'</a>';
-		
+
 	if (!a)
 		return;
 	var $a = $(a);
@@ -827,7 +846,7 @@ $.fn.cycle.createPagerAnchor = function(i, el, $p, els, opts) {
 
 	opts.pagerAnchors =  opts.pagerAnchors || [];
 	opts.pagerAnchors.push($a);
-	
+
 	var pagerFn = function(e) {
 		e.preventDefault();
 		opts.nextSlide = i;
@@ -842,29 +861,29 @@ $.fn.cycle.createPagerAnchor = function(i, el, $p, els, opts) {
 		go(els,opts,1,opts.currSlide < i); // trigger the trans
 //		return false; // <== allow bubble
 	}
-	
+
 	if ( /mouseenter|mouseover/i.test(opts.pagerEvent) ) {
 		$a.hover(pagerFn, function(){/* no-op */} );
 	}
 	else {
 		$a.bind(opts.pagerEvent, pagerFn);
 	}
-	
+
 	if ( ! /^click/.test(opts.pagerEvent) && !opts.allowPagerClickBubble)
 		$a.bind('click.cycle', function(){return false;}); // suppress click
-	
+
 	var cont = opts.$cont[0];
 	var pauseFlag = false; // https://github.com/malsup/cycle/issues/44
 	if (opts.pauseOnPagerHover) {
 		$a.hover(
-			function() { 
+			function() {
 				pauseFlag = true;
-				cont.cyclePause++; 
+				cont.cyclePause++;
 				triggerPause(cont,true,true);
-			}, function() { 
-				pauseFlag && cont.cyclePause--; 
+			}, function() {
+				pauseFlag && cont.cyclePause--;
 				triggerPause(cont,true,true);
-			} 
+			}
 		);
 	}
 };
@@ -937,7 +956,7 @@ $.fn.cycle.custom = function(curr, next, opts, cb, fwd, speedOverride) {
 	};
 	$l.animate(opts.animOut, speedOut, easeOut, function() {
 		$l.css(opts.cssAfter);
-		if (!opts.sync) 
+		if (!opts.sync)
 			fn();
 	});
 	if (opts.sync) fn();

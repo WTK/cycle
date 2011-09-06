@@ -115,9 +115,13 @@ $.fn.cycle = function(options) {
     });
 };
 
+function stageNextTransition(els, opts, p) {
+    p.cycleTimeout = setTimeout(function() { go(els,opts,0,!opts.rev) }, opts.timeout);
+};
+
 function go(els, opts, manual, fwd) {
     if (opts.busy) return;
-    var p = els[0].parentNode, curr = els[opts.currSlide], next = els[opts.nextSlide];
+    var p = els[0].parentNode, curr = els[opts.currSlide], next = els[opts.nextSlide], bindBeforehand = false;
     if (p.cycleTimeout === 0 && !manual) 
         return;
 
@@ -128,6 +132,7 @@ function go(els, opts, manual, fwd) {
             if ($.browser.msie)
                 this.style.removeAttribute('filter');
             $.each(opts.after, function(i,o) { o.apply(next, [curr, next, opts, fwd]); });
+            stageNextTransition(els, opts, p);
         };
 
         if (opts.nextSlide != opts.currSlide) {
@@ -137,9 +142,12 @@ function go(els, opts, manual, fwd) {
         var roll = (opts.nextSlide + 1) == els.length;
         opts.nextSlide = roll ? 0 : opts.nextSlide+1;
         opts.currSlide = roll ? els.length-1 : opts.nextSlide-1;
+    } else {
+        bindBeforehand = true;
     }
-    if (opts.timeout)
-        p.cycleTimeout = setTimeout(function() { go(els,opts,0,!opts.rev) }, opts.timeout);
+    if (opts.timeout && bindBeforehand) {
+        stageNextTransition(els, opts, p);
+    }
 };
 
 // advance slide forward or back
